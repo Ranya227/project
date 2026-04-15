@@ -138,3 +138,5 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
+
+CSRF_TRUSTED_ORIGINS = ['https://nuvella-987e.onrender.com']
