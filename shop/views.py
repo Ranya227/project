@@ -12,7 +12,11 @@ from django.contrib.auth.models import User
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
 from django.contrib.auth import authenticate, get_user_model
-
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser
+import google.generativeai as genai
+import os
 
 User = get_user_model()
 
@@ -168,3 +172,37 @@ def login_api(request):
         return Response({"token": token.key})
     else:
         return Response({"error": "بيانات الدخول غير صحيحة"}, status=400)
+    
+class VtonPromptView(APIView):
+    # هذا السطر ضروري ليظهر زر "Upload" في Swagger
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        # إعداد المفتاح
+        genai.configure(api_key="AIzaSy...") 
+        model = genai.GenerativeModel('gemini-1.5-flash')
+
+        # استقبال الصور من الطلب
+        user_file = request.FILES.get('user_image')
+        cloth_file = request.FILES.get('cloth_image')
+
+        # تحقق من وجود الصور لتجنب الأخطاء
+        if not user_file or not cloth_file:
+            return Response({"error": "Please upload both user and cloth images"}, status=400)
+
+        # تحويل الصور وتحليلها بواسطة Gemini
+        user_img = {'mime_type': 'image/jpeg', 'data': user_file.read()}
+        cloth_img = {'mime_type': 'image/jpeg', 'data': cloth_file.read()}
+
+        # الـ Prompt الذي يركز على مشروعك (VTON)
+        prompt = (
+            "You are a professional VTON (Virtual Try-On) assistant. "
+            "Analyze the person's features and the clothing item provided. "
+            "Generate a highly detailed English prompt for an AI image generator. "
+            "The result must show the exact person from the first image wearing the exact clothing from the second image. "
+            "Maintain body proportions and facial identity strictly."
+        )
+
+        response = model.generate_content([prompt, user_img, cloth_img])
+
+        return Response({"generated_prompt": response.text})
