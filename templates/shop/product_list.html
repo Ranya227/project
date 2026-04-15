@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>متجري المتميز</title>
+    <style>
+        .product-card { border: 1px solid #ccc; padding: 10px; margin: 10px; display: inline-block; width: 200px; }
+        .product-card img { max-width: 100%; height: auto; }
+    </style>
+</head>
+<body>
+    <h1>مرحباً بك في متجرنا</h1>
+    <hr>
+    
+    <div class="products-container">
+        {% for product in products %}
+            <div class="product-card">
+                {% with product.images.all|first as image_obj %}
+                    {% if image_obj %}
+                        <img src="{{ image_obj.image.url }}" alt="{{ product.name }}">
+                    {% endif %}
+                {% endwith %}
+                
+                <h3>{{ product.name }}</h3>
+                <p>السعر: {{ product.price }} ل.س</p>
+                <p>القسم: {{ product.section.name }}</p>
+                <button>إضافة للسلة</button>
+            </div>
+        {% empty %}
+            <p>لا يوجد منتجات حالياً.</p>
+        {% endfor %}
+    </div>
+</body>
+</html>
