@@ -173,36 +173,46 @@ def login_api(request):
     else:
         return Response({"error": "بيانات الدخول غير صحيحة"}, status=400)
     
+
+    
+import os
+import google.generativeai as genai
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser
+
 class VtonPromptView(APIView):
-    # هذا السطر ضروري ليظهر زر "Upload" في Swagger
     parser_classes = [MultiPartParser]
 
     def post(self, request):
-        # إعداد المفتاح
-        genai.configure(api_key="AIzaSy...") 
+        parser_classes = [MultiPartParser] 
+        api_key = os.environ.get('GEMINI_API_KEY')
+        
+        if not api_key:
+            return Response({"error": "API Key not configured on server"}, status=500)
+
+        genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-flash')
 
-        # استقبال الصور من الطلب
+        # استقبال الصور
         user_file = request.FILES.get('user_image')
         cloth_file = request.FILES.get('cloth_image')
 
-        # تحقق من وجود الصور لتجنب الأخطاء
         if not user_file or not cloth_file:
-            return Response({"error": "Please upload both user and cloth images"}, status=400)
+            return Response({"error": "Both images are required"}, status=400)
 
-        # تحويل الصور وتحليلها بواسطة Gemini
+        # تحويل الصور ومعالجتها
         user_img = {'mime_type': 'image/jpeg', 'data': user_file.read()}
         cloth_img = {'mime_type': 'image/jpeg', 'data': cloth_file.read()}
 
-        # الـ Prompt الذي يركز على مشروعك (VTON)
         prompt = (
-            "You are a professional VTON (Virtual Try-On) assistant. "
-            "Analyze the person's features and the clothing item provided. "
-            "Generate a highly detailed English prompt for an AI image generator. "
-            "The result must show the exact person from the first image wearing the exact clothing from the second image. "
-            "Maintain body proportions and facial identity strictly."
+            "As a VTON expert, describe the person in the first image wearing the garment "
+            "from the second image. Maintain facial identity and body shape strictly. "
+            "Output a detailed prompt for image generation."
         )
 
-        response = model.generate_content([prompt, user_img, cloth_img])
-
-        return Response({"generated_prompt": response.text})
+        try:
+            response = model.generate_content([prompt, user_img, cloth_img])
+            return Response({"generated_prompt": response.text})
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
