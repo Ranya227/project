@@ -141,3 +141,14 @@ REST_FRAMEWORK = {
 }
 
 CSRF_TRUSTED_ORIGINS = ['https://nuvella-987e.onrender.com']
+import os
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+username = "ranya"
+email = "ranya@example.com"
+password = "1234" 
+
+if not User.objects.filter(username=username).exists():
+    User.objects.create_superuser(username, email, password)
+    print("Superuser created successfully!")
