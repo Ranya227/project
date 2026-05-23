@@ -16,12 +16,10 @@ import tempfile
 
 User = get_user_model()
 
-# --- Serializers ---
 class VtonTryOnSerializer(serializers.Serializer):
     user_image = serializers.ImageField()
     cloth_image = serializers.ImageField()
 
-# --- 1. Frontend View (The one causing the error) ---
 def product_list(request):
     products = Products.objects.all()
     all_sections = sections.objects.all()
@@ -30,7 +28,6 @@ def product_list(request):
         'sections': all_sections
     })
 
-# --- 2. API Views for Products & Sections ---
 @api_view(['GET'])
 def product_api_list(request):
     products = Products.objects.all()
@@ -43,7 +40,6 @@ def section_api_list(request):
     serializer = SectionSerializer(all_sections, many=True)
     return Response(serializer.data)
 
-# --- 3. Cart & Orders API ---
 @api_view(['GET'])
 def user_cart_api(request):
     try:
@@ -51,6 +47,12 @@ def user_cart_api(request):
         return Response(CartSerializer(cart).data)
     except Cart.DoesNotExist:
         return Response({"error": "Cart not found"}, status=404)
+
+@api_view(['GET'])
+def user_orders_api(request):
+    orders = Order.objects.filter(user=request.user)
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
 
 @api_view(['POST'])
 def add_to_cart_api(request):
@@ -73,7 +75,6 @@ def checkout_api(request):
         cart.products.clear()
         return Response({"status": "success", "total": total}, status=201)
 
-# --- 4. Auth API ---
 @api_view(['POST'])
 def register_api(request):
     username = request.data.get('username')
@@ -95,7 +96,6 @@ def login_api(request):
         return Response({"token": token.key})
     return Response({"error": "Invalid credentials"}, status=400)
 
-# --- 5. Virtual Try-On (VTON) View ---
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
     serializer_class = VtonTryOnSerializer
@@ -108,7 +108,7 @@ class VtonPromptView(APIView):
         try:
             user_img = request.FILES['user_image']
             cloth_img = request.FILES['cloth_image']
-        
+
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as user_tmp:
                 user_tmp.write(user_img.read())
                 user_path = user_tmp.name
@@ -117,7 +117,6 @@ class VtonPromptView(APIView):
                 cloth_tmp.write(cloth_img.read())
                 cloth_path = cloth_tmp.name
 
-        
             client = Client("yisol/IDM-VTON")
             result = client.predict(
                 dict={"background": handle_file(user_path), "layers": [], "composite": None},
@@ -137,5 +136,9 @@ class VtonPromptView(APIView):
         except Exception as e:
             return Response({"error": f"VTON failed: {str(e)}"}, status=500)
         finally:
-            if 'user_path' in locals(): os.unlink(user_path)
-            if 'cloth_path' in locals(): os.unlink(cloth_path)
+            if 'user_path' in locals():
+                try: os.unlink(user_path)
+                except: pass
+            if 'cloth_path' in locals():
+                try: os.unlink(cloth_path)
+                except: pass
