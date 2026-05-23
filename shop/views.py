@@ -29,8 +29,8 @@ class AddToCartRequestSerializer(serializers.Serializer):
     quantity = serializers.IntegerField(default=1)
 
 class VtonTryOnSerializer(serializers.Serializer):
-    product_id = serializers.IntegerField(help_text="ID of the clothing product from database")
     user_image = serializers.ImageField(help_text="Upload the person's photo")
+    cloth_image = serializers.ImageField(help_text="Upload the clothing item photo")
 
 
 def product_list(request):
@@ -60,7 +60,7 @@ def user_cart_api(request):
         serializer = CartSerializer(cart)
         return Response(serializer.data)
     except Cart.DoesNotExist:
-        return Response({"error": "السلة غير موجودة لهذا المستخدم"}, status=404)
+        return Response({"error": "Cart not found for this user"}, status=404)
 
 @api_view(['GET'])
 def user_orders_api(request):
@@ -77,10 +77,10 @@ def add_to_cart_api(request):
     cart, created = Cart.objects.get_or_create(user=request.user)
 
     if cart.products.filter(Products_id=product_id).exists():
-        message = f"تم تحديث كمية {product.name} في السلة."
+        message = f"Updated {product.name} quantity in cart."
     else:
         cart.products.add(product)
-        message = f"تمت إضافة {product.name} للسلة لأول مرة."
+        message = f"Added {product.name} to cart."
     
     cart.save()
     return Response({
@@ -95,9 +95,9 @@ def checkout_api(request):
     try:
         cart = Cart.objects.get(user=user)
         if not cart.products.exists():
-            return Response({"error": "السلة فارغة، لا يمكنك إتمام الطلب"}, status=400)
+            return Response({"error": "Cart is empty"}, status=400)
     except Cart.DoesNotExist:
-        return Response({"error": "لا توجد سلة لهذا المستخدم"}, status=404)
+        return Response({"error": "No cart found for this user"}, status=404)
 
     with transaction.atomic():
         new_order = Order.objects.create(
@@ -118,7 +118,7 @@ def checkout_api(request):
         cart.save()
         
         return Response({
-            "status": "success", "message": "تم إتمام الطلب بنجاح!",
+            "status": "success","message": "Order completed successfully",
             "order_id": new_order.order_id, 
             "total_amount": total
         }, status=status.HTTP_201_CREATED)
@@ -130,12 +130,12 @@ def register_api(request):
     email = request.data.get('email')
     
     if User.objects.filter(username=username).exists():
-        return Response({"error": "اسم المستخدم موجود مسبقاً"}, status=400)
+        return Response({"error": "Username already exists"}, status=400)
     
     user = User.objects.create_user(username=username, password=password, email=email)
     token, created = Token.objects.get_or_create(user=user)
     return Response({
-        "message": "تم إنشاء الحساب بنجاح",
+        "message": "Account created successfully",
         "token": token.key
     }, status=201)
 
@@ -149,13 +149,13 @@ def login_api(request):
         token, created = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
     else:
-        return Response({"error": "بيانات الدخول غير صحيحة"}, status=400)
+        return Response({"error": "Invalid credentials"}, status=400)
 
 
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
     serializer_class = VtonTryOnSerializer
-
+    
     def post(self, request):
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
@@ -165,44 +165,32 @@ class VtonPromptView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        product_id = serializer.validated_data['product_id']
         user_file = serializer.validated_data['user_image']
-
-        product = get_object_or_404(Products, Products_id=product_id)
-        
-        product_image_obj = product.images.filter(is_cover=True).first() or product.images.first()
-        
-        if not product_image_obj:
-            return Response({"error": "Product has no images in the database"}, status=400)
+        cloth_file = serializer.validated_data['cloth_image']
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-pro')
+        model = genai.GenerativeModel('gemini-1.5-flash')
 
         try:
             user_img_bytes = user_file.read()
             user_img_data = {'mime_type': 'image/jpeg', 'data': user_img_bytes}
 
-            with product_image_obj.image.open('rb') as cloth_file:
-                cloth_img_bytes = cloth_file.read()
-            
+            cloth_img_bytes = cloth_file.read()
             cloth_img_data = {'mime_type': 'image/jpeg', 'data': cloth_img_bytes}
 
             prompt = (
-                f"You are a professional Virtual Try-On (VTON) system. "
-                f"Analyze the person's body structure and appearance in the first image, "
-                f"and the clothing item named '{product.name}' in the second image. "
-                f"Cloth Description: {product.description}. "
-                f"Generate a highly detailed, professional English prompt for an AI image generator (like Diffusion models). "
-                f"The resulting prompt must explicitly describe the exact person from the first image wearing the exact clothing item from the second image, "
-                f"strictly preserving facial features, body proportions, clothing designs, textures, and patterns."
+                "You are a professional Virtual Try-On (VTON) system. "
+                "Analyze the person's body structure and appearance in the first image, "
+                "and the clothing item in the second image. "
+                "Generate a highly detailed, professional English prompt for an AI image generator. "
+                "The resulting prompt must explicitly describe the exact person from the first image wearing the exact clothing item from the second image, "
+                "preserving facial features, body proportions, and clothing patterns."
             )
 
             response = model.generate_content([prompt, user_img_data, cloth_img_data])
             
             return Response({
                 "status": "success",
-                "product_id": product_id,
-                "product_name": product.name,
                 "generated_prompt": response.text
             }, status=status.HTTP_200_OK)
             
