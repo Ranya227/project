@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404
+from django.http import HttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import sections, Cart, Order, Products
@@ -20,17 +21,81 @@ class VtonTryOnSerializer(serializers.Serializer):
     user_image = serializers.ImageField()
     cloth_image = serializers.ImageField()
 
-# --- Existing API Views (Keep them as they are) ---
+# --- 1. Frontend View (The one causing the error) ---
+def product_list(request):
+    products = Products.objects.all()
+    all_sections = sections.objects.all()
+    return render(request, 'shop/product_list.html', {
+        'products': products,
+        'sections': all_sections
+    })
+
+# --- 2. API Views for Products & Sections ---
 @api_view(['GET'])
 def product_api_list(request):
     products = Products.objects.all()
-    return Response(ProductSerializer(products, many=True).data)
+    serializer = ProductSerializer(products, many=True)
+    return Response(serializer.data)
 
 @api_view(['GET'])
 def section_api_list(request):
-    return Response(SectionSerializer(sections.objects.all(), many=True).data)
+    all_sections = sections.objects.all()
+    serializer = SectionSerializer(all_sections, many=True)
+    return Response(serializer.data)
 
-# --- The New Working VTON View ---
+# --- 3. Cart & Orders API ---
+@api_view(['GET'])
+def user_cart_api(request):
+    try:
+        cart = Cart.objects.get(user=request.user)
+        return Response(CartSerializer(cart).data)
+    except Cart.DoesNotExist:
+        return Response({"error": "Cart not found"}, status=404)
+
+@api_view(['POST'])
+def add_to_cart_api(request):
+    product_id = request.data.get('product_id')
+    product = get_object_or_404(Products, Products_id=product_id)
+    cart, _ = Cart.objects.get_or_create(user=request.user)
+    cart.products.add(product)
+    cart.save()
+    return Response({"status": "success"}, status=200)
+
+@api_view(['POST'])
+def checkout_api(request):
+    user = request.user
+    cart = get_object_or_404(Cart, user=user)
+    with transaction.atomic():
+        new_order = Order.objects.create(user=user, order_status='Pending', payment_method='Cash on Delivery')
+        total = sum(p.price for p in cart.products.all())
+        new_order.total_price = total
+        new_order.save()
+        cart.products.clear()
+        return Response({"status": "success", "total": total}, status=201)
+
+# --- 4. Auth API ---
+@api_view(['POST'])
+def register_api(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+    email = request.data.get('email')
+    if User.objects.filter(username=username).exists():
+        return Response({"error": "Username exists"}, status=400)
+    user = User.objects.create_user(username=username, password=password, email=email)
+    token, _ = Token.objects.get_or_create(user=user)
+    return Response({"token": token.key}, status=201)
+
+@api_view(['POST'])
+def login_api(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+    user = authenticate(username=username, password=password)
+    if user:
+        token, _ = Token.objects.get_or_create(user=user)
+        return Response({"token": token.key})
+    return Response({"error": "Invalid credentials"}, status=400)
+
+# --- 5. Virtual Try-On (VTON) View ---
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
     serializer_class = VtonTryOnSerializer
@@ -41,23 +106,19 @@ class VtonPromptView(APIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-          
             user_img = request.FILES['user_image']
             cloth_img = request.FILES['cloth_image']
-
+        
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as user_tmp:
-                for chunk in user_img.chunks():
-                    user_tmp.write(chunk)
+                user_tmp.write(user_img.read())
                 user_path = user_tmp.name
 
             with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as cloth_tmp:
-                for chunk in cloth_img.chunks():
-                    cloth_tmp.write(chunk)
+                cloth_tmp.write(cloth_img.read())
                 cloth_path = cloth_tmp.name
 
-            
+        
             client = Client("yisol/IDM-VTON")
-            
             result = client.predict(
                 dict={"background": handle_file(user_path), "layers": [], "composite": None},
                 garm_img=handle_file(cloth_path),
@@ -68,15 +129,13 @@ class VtonPromptView(APIView):
                 api_name="/tryon"
             )
 
-            
             return Response({
                 "status": "success",
-                "result": result[0] if isinstance(result, tuple) else result
+                "result_image_url": result[0] if isinstance(result, (list, tuple)) else result
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
             return Response({"error": f"VTON failed: {str(e)}"}, status=500)
         finally:
-           
             if 'user_path' in locals(): os.unlink(user_path)
             if 'cloth_path' in locals(): os.unlink(cloth_path)
