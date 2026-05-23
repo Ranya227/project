@@ -110,9 +110,9 @@ def login_api(request):
     if user:
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
-    return Response({"error": "Invalid credentials"}, status=400)
+        return Response({"error": "Invalid credentials"}, status=400)
 
-# --- Virtual Try-On (VTON) ---
+# --- Virtual Try-On (VTON) باستخدام Byte Streams ---
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
     serializer_class = VtonTryOnSerializer
@@ -126,17 +126,20 @@ class VtonPromptView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-       
-        user_img = request.FILES['user_image']
-        cloth_img = request.FILES['cloth_image']
-
         try:
-            # استخدام موديل IDM-VTON
+           
+            user_img_file = request.FILES['user_image']
+            cloth_img_file = request.FILES['cloth_image']
+            
+            user_bytes = user_img_file.read()
+            cloth_bytes = cloth_img_file.read()
+
+            
             output = replicate.run(
                 "yisol/idm-vton:8a89b0ab59a037c0f3d083cd0da9a05a1bfbcd61f5bc12627b83500b21da8ad4",
                 input={
-                    "human_img": user_img, 
-                    "garm_img": cloth_img,
+                    "human_img": user_bytes, 
+                    "garm_img": cloth_bytes,
                     "garment_des": "clothing item",
                     "is_checked": True,
                     "is_checked_det": True,
@@ -144,10 +147,15 @@ class VtonPromptView(APIView):
                 }
             )
 
+        
+            final_url = output[0] if isinstance(output, list) else output
+            
             return Response({
                 "status": "success",
-                "result_image_url": output[0] if isinstance(output, list) else output
+                "result_image_url": final_url
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
+            
+            print(f"DEBUG VTON ERROR: {str(e)}")
             return Response({"error": f"VTON Execution Failed: {str(e)}"}, status=500)
