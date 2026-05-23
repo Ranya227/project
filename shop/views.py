@@ -110,9 +110,9 @@ def login_api(request):
     if user:
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
-        return Response({"error": "Invalid credentials"}, status=400)
+    return Response({"error": "Invalid credentials"}, status=400)
 
-# --- VTON (Virtual Try-On) ---
+# --- Virtual Try-On (VTON) ---
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
     serializer_class = VtonTryOnSerializer
@@ -126,14 +126,16 @@ class VtonPromptView(APIView):
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+       
         user_img = request.FILES['user_image']
         cloth_img = request.FILES['cloth_image']
 
         try:
+            # استخدام موديل IDM-VTON
             output = replicate.run(
                 "yisol/idm-vton:8a89b0ab59a037c0f3d083cd0da9a05a1bfbcd61f5bc12627b83500b21da8ad4",
                 input={
-                    "human_img": user_img,
+                    "human_img": user_img, 
                     "garm_img": cloth_img,
                     "garment_des": "clothing item",
                     "is_checked": True,
