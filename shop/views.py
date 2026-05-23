@@ -13,6 +13,7 @@ from rest_framework.parsers import MultiPartParser
 from gradio_client import Client, handle_file
 import os
 import tempfile
+import base64
 
 User = get_user_model()
 
@@ -126,21 +127,20 @@ class VtonPromptView(APIView):
                 api_name="/tryon"
             )
 
-     
             result_path = result[0] if isinstance(result, (list, tuple)) else result
             
-    
-            if result_path:
-                file_name = os.path.basename(result_path)
-                folder_id = result_path.split('/')[-2]
-                
-                final_url = f"https://yisol-idm-vton.hf.space/file={result_path}"
+            # تحويل ملف الصورة الناتج إلى Base64
+            if result_path and os.path.exists(result_path):
+                with open(result_path, "rb") as image_file:
+                    encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+                    # إضافة Header ليفهم المتصفح أنها صورة PNG
+                    final_image_data = f"data:image/png;base64,{encoded_string}"
             else:
-                final_url = None
+                return Response({"error": "Result file not found on AI server"}, status=500)
 
             return Response({
                 "status": "success",
-                "result_image_url": final_url
+                "result_image_base64": final_image_data
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
