@@ -60,7 +60,7 @@ def user_cart_api(request):
         serializer = CartSerializer(cart)
         return Response(serializer.data)
     except Cart.DoesNotExist:
-        return Response({"error": "Cart not found for this user"}, status=404)
+        return Response({"error": "Cart not found"}, status=404)
 
 @api_view(['GET'])
 def user_orders_api(request):
@@ -77,7 +77,7 @@ def add_to_cart_api(request):
     cart, created = Cart.objects.get_or_create(user=request.user)
 
     if cart.products.filter(Products_id=product_id).exists():
-        message = f"Updated {product.name} quantity in cart."
+        message = f"Updated {product.name} quantity."
     else:
         cart.products.add(product)
         message = f"Added {product.name} to cart."
@@ -97,7 +97,7 @@ def checkout_api(request):
         if not cart.products.exists():
             return Response({"error": "Cart is empty"}, status=400)
     except Cart.DoesNotExist:
-        return Response({"error": "No cart found for this user"}, status=404)
+        return Response({"error": "No cart found"}, status=404)
 
     with transaction.atomic():
         new_order = Order.objects.create(
@@ -118,7 +118,8 @@ def checkout_api(request):
         cart.save()
         
         return Response({
-            "status": "success","message": "Order completed successfully",
+            "status": "success",
+            "message": "Order completed",
             "order_id": new_order.order_id, 
             "total_amount": total
         }, status=status.HTTP_201_CREATED)
@@ -130,26 +131,21 @@ def register_api(request):
     email = request.data.get('email')
     
     if User.objects.filter(username=username).exists():
-        return Response({"error": "Username already exists"}, status=400)
+        return Response({"error": "Username exists"}, status=400)
     
     user = User.objects.create_user(username=username, password=password, email=email)
     token, created = Token.objects.get_or_create(user=user)
-    return Response({
-        "message": "Account created successfully",
-        "token": token.key
-    }, status=201)
+    return Response({"token": token.key}, status=201)
 
 @api_view(['POST'])
 def login_api(request):
     username = request.data.get('username')
     password = request.data.get('password')
-    
     user = authenticate(username=username, password=password)
     if user:
         token, created = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
-    else:
-        return Response({"error": "Invalid credentials"}, status=400)
+    return Response({"error": "Invalid credentials"}, status=400)
 
 
 class VtonPromptView(APIView):
@@ -169,30 +165,34 @@ class VtonPromptView(APIView):
         cloth_file = serializer.validated_data['cloth_image']
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+        
+        user_img_bytes = user_file.read()
+        user_img_data = {'mime_type': 'image/jpeg', 'data': user_img_bytes}
+
+        cloth_img_bytes = cloth_file.read()
+        cloth_img_data = {'mime_type': 'image/jpeg', 'data': cloth_img_bytes}
+
+        prompt = (
+            "You are a professional Virtual Try-On system. "
+            "Describe the person in the first image wearing the exact clothing from the second image. "
+            "Create a detailed prompt for image generation."
+        )
 
         try:
-            user_img_bytes = user_file.read()
-            user_img_data = {'mime_type': 'image/jpeg', 'data': user_img_bytes}
-
-            cloth_img_bytes = cloth_file.read()
-            cloth_img_data = {'mime_type': 'image/jpeg', 'data': cloth_img_bytes}
-
-            prompt = (
-                "You are a professional Virtual Try-On (VTON) system. "
-                "Analyze the person's body structure and appearance in the first image, "
-                "and the clothing item in the second image. "
-                "Generate a highly detailed, professional English prompt for an AI image generator. "
-                "The resulting prompt must explicitly describe the exact person from the first image wearing the exact clothing item from the second image, "
-                "preserving facial features, body proportions, and clothing patterns."
-            )
-
+            model = genai.GenerativeModel('gemini-1.5-flash')
             response = model.generate_content([prompt, user_img_data, cloth_img_data])
-            
             return Response({
                 "status": "success",
                 "generated_prompt": response.text
             }, status=status.HTTP_200_OK)
             
         except Exception as e:
-            return Response({"error": f"Failed to process VTON: {str(e)}"}, status=500)
+            try:
+                model_alt = genai.GenerativeModel('gemini-pro-vision')
+                response = model_alt.generate_content([prompt, user_img_data, cloth_img_data])
+                return Response({
+                    "status": "success",
+                    "generated_prompt": response.text
+                }, status=status.HTTP_200_OK)
+            except Exception as final_e:
+                return Response({"error": f"API Error: {str(e)}"}, status=500)
