@@ -15,6 +15,7 @@ import os
 
 User = get_user_model()
 
+# --- Serializers ---
 class LoginRequestSerializer(serializers.Serializer):
     username = serializers.CharField()
     password = serializers.CharField()
@@ -28,7 +29,7 @@ class VtonTryOnSerializer(serializers.Serializer):
     user_image = serializers.ImageField()
     cloth_image = serializers.ImageField()
 
-# --- Products & Shop Views ---
+# --- Shop Views (Frontend) ---
 def product_list(request):
     products = Products.objects.all()
     all_sections = sections.objects.all()
@@ -37,13 +38,34 @@ def product_list(request):
         'sections': all_sections
     })
 
+# --- API Views ---
 @api_view(['GET'])
 def product_api_list(request):
     products = Products.objects.all()
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
 
-# --- Cart & Orders Views ---
+@api_view(['GET'])
+def section_api_list(request):
+    all_sections = sections.objects.all()
+    serializer = SectionSerializer(all_sections, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+def user_cart_api(request):
+    try:
+        cart = Cart.objects.get(user=request.user)
+        serializer = CartSerializer(cart)
+        return Response(serializer.data)
+    except Cart.DoesNotExist:
+        return Response({"error": "Cart not found"}, status=404)
+
+@api_view(['GET'])
+def user_orders_api(request):
+    orders = Order.objects.filter(user=request.user)
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
+
 @api_view(['POST'])
 def add_to_cart_api(request):
     product_id = request.data.get('product_id')
@@ -68,7 +90,7 @@ def checkout_api(request):
         cart.products.clear()
         return Response({"status": "success", "order_id": new_order.order_id, "total": total}, status=201)
 
-# --- Auth Views ---
+# --- Auth API ---
 @api_view(['POST'])
 def register_api(request):
     username = request.data.get('username')
@@ -88,9 +110,9 @@ def login_api(request):
     if user:
         token, _ = Token.objects.get_or_create(user=user)
         return Response({"token": token.key})
-    return Response({"error": "Invalid credentials"}, status=400)
+        return Response({"error": "Invalid credentials"}, status=400)
 
-# --- Virtual Try-On (VTON) View ---
+# --- VTON (Virtual Try-On) ---
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
     serializer_class = VtonTryOnSerializer
@@ -108,7 +130,6 @@ class VtonPromptView(APIView):
         cloth_img = request.FILES['cloth_image']
 
         try:
-            # Using IDM-VTON model via Replicate
             output = replicate.run(
                 "yisol/idm-vton:8a89b0ab59a037c0f3d083cd0da9a05a1bfbcd61f5bc12627b83500b21da8ad4",
                 input={
@@ -121,7 +142,6 @@ class VtonPromptView(APIView):
                 }
             )
 
-            # The output is a list containing the URL of the result image
             return Response({
                 "status": "success",
                 "result_image_url": output[0] if isinstance(output, list) else output
