@@ -154,7 +154,8 @@ def login_api(request):
 
 class VtonPromptView(APIView):
     parser_classes = [MultiPartParser]
-    
+    serializer_class = VtonTryOnSerializer
+
     def post(self, request):
         api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
@@ -172,7 +173,7 @@ class VtonPromptView(APIView):
         product_image_obj = product.images.filter(is_cover=True).first() or product.images.first()
         
         if not product_image_obj:
-            return Response({"error": "هذا المنتج لا يحتوي على صور مخزنة في قاعدة البيانات"}, status=400)
+            return Response({"error": "Product has no images in the database"}, status=400)
 
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel('gemini-1.5-pro')
