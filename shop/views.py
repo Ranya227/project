@@ -169,7 +169,7 @@ class VtonPromptView(APIView):
         cloth_file = serializer.validated_data['cloth_image']
 
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
 
         try:
             user_img_bytes = user_file.read()
