@@ -123,7 +123,6 @@ class VtonPromptView(APIView):
                 garm_img=handle_file(cloth_path),
                 garment_des="clothing item",
                 is_checked=True,
-                num_inference_steps=30,
                 api_name="/tryon"
             )
 
