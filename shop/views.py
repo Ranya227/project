@@ -126,9 +126,22 @@ class VtonPromptView(APIView):
                 api_name="/tryon"
             )
 
+            result_path = result[0] if isinstance(result, (list, tuple)) else result
+            
+            if result_path and not result_path.startswith('http'):
+                file_name = os.path.basename(result_path)
+                parts = result_path.split('/')
+                if len(parts) >= 2:
+                    folder_id = parts[-2]
+                    final_url = f"https://yisol-idm-vton.hf.space/file=/tmp/gradio/{folder_id}/{file_name}"
+                else:
+                    final_url = result_path
+            else:
+                final_url = result_path
+
             return Response({
                 "status": "success",
-                "result_image_url": result[0] if isinstance(result, (list, tuple)) else result
+                "result_image_url": final_url
             }, status=status.HTTP_200_OK)
 
         except Exception as e:
